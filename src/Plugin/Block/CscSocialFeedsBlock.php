@@ -92,10 +92,12 @@ class CscSocialFeedsBlock extends BlockBase {
    * {@inheritdoc}
    */
   public function blockAccess(AccountInterface $account) {
+    return AccessResult::allowed();
     // Check if the current user has access to the block.
     // You can implement your access logic here.
     // For example, you can check user roles or permissions.
-    if ($account->hasPermission('administer blocks')) {
+    // Below does not work for anonymous users.
+    if ($account->hasPermission('view published content')) {
       // Grant access if the user has the necessary permission.
       return AccessResult::allowed();
     }
