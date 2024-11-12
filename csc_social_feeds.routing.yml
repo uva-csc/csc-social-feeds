@@ -1,0 +1,7 @@
+your_module_name.settings:
+  path: '/admin/config/csc_social_feeds/settings'
+  defaults:
+    _form: '\Drupal\csc_social_feeds\Form\CscSocialFeedsSettingsForm'
+    _title: 'CSC Social Feeds Settings'
+  requirements:
+    _permission: 'administer site configuration'

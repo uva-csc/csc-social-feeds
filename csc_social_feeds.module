@@ -1,0 +1,98 @@
+<?php
+/*
+function csc_social_feeds_theme($existing, $type, $theme, $path) {
+  return [
+    'csc_facebook_feed' => [
+      'variables' => ['entries' => NULL],
+      'template' => 'block--csc-facebook-feed',
+    ],
+  ];
+}
+*/
+
+function csc_social_feeds_update_token($force=false, $msg=false) {
+  $config = \Drupal::config('csc_social_feeds.settings');
+  $expires = $config->get('fb_app_token_expires');
+  // If less than a day until it expires, refresh token. Assumes cron is run every day and only one version of site.
+  if ($expires - time() < 86400 || $force) {
+    $tkndata = csc_social_feeds_refresh_token();
+    if (!empty($tkndata['access_token'])) {
+      $config = \Drupal::configFactory()
+        ->getEditable('csc_social_feeds.settings');
+      $config->set('fb_app_access_token', $tkndata['access_token'])
+        ->set('fb_app_token_refresh_ts', time())
+        ->set('fb_app_token_expires', time() + $tkndata['expires_in'])
+        ->save();
+
+      $dt_display = csc_social_date($tkndata['expires_in']);
+      if ($msg) {
+        \Drupal::messenger()
+          ->addMessage(t('The FB access token has been refreshed. It expires on @expire_dt', ['@expire_dt' => $dt_display]));
+      }
+    }
+  }
+}
+
+function csc_social_feeds_refresh_token() {
+  $config = \Drupal::config('csc_social_feeds.settings');
+
+  $app_id = $config->get('fb_app_id');
+  $app_secret = $config->get('fb_app_secret');
+  $short_term_token = $config->get('fb_app_access_token'); // Can be either short or long term
+
+  // Prepare the URL for exchanging the short-term token.
+  $endpoint = "https://graph.facebook.com/v21.0/oauth/access_token"
+    . "?grant_type=fb_exchange_token"
+    . "&client_id={$app_id}"
+    . "&client_secret={$app_secret}"
+    . "&fb_exchange_token={$short_term_token}";
+
+  try {
+    // Make the request to Facebook Graph API.
+    $response = \Drupal::httpClient()->get($endpoint);
+
+    // Parse the response.
+    $data = json_decode($response->getBody(), true);
+
+    // Check if a new access token was returned.
+    if (isset($data['access_token'])) {
+      \Drupal::logger('csc_social_feeds')->info("Access token refreshed: " . $data['access_token']);
+      return $data;
+    }
+    else {
+      \Drupal::logger('my_module')->error('Failed to exchange token: ' . print_r($data, TRUE));
+      return NULL;
+    }
+  }
+  catch (\Exception $e) {
+    // Log any exceptions or errors for debugging.
+    \Drupal::logger('my_module')->error('Error in token exchange: ' . $e->getMessage());
+    return NULL;
+  }
+}
+
+function csc_social_feeds_get_posts() {
+  csc_social_feeds_update_token();
+  $config = \Drupal::config('csc_social_feeds.settings');
+  $pg_id = $config->get('fb_csc_page_id');
+  $app_token = $config->get('fb_app_access_token');
+
+  try {
+    $fbfields = 'id,message,attachments,permalink_url,created_time';
+    $response = \Drupal::httpClient()->get("https://graph.facebook.com/v21.0/$pg_id/posts?fields=$fbfields&access_token=$app_token");
+    $data = json_decode($response->getBody(), true);
+    if (isset($data['data'])) {
+      return $data['data'];
+    }
+  } catch (\Exception $e) {
+    // Log any exceptions or errors for debugging.
+    \Drupal::logger('my_module')->error('Error in token exchange: ' . $e->getMessage());
+    return NULL;
+  }
+}
+
+function csc_social_date($ts) {
+  $dateTime = new DateTime("@$ts"); // The "@" symbol treats the timestamp as UTC
+  $dateTime->setTimezone(new DateTimeZone('America/New_York')); // Convert to EST
+  return $dateTime->format("M j Y, h:i:s a");
+}
